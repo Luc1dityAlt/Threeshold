@@ -34,16 +34,21 @@ document.addEventListener('mousemove', e=>{
   }
 });
 
-// World walls
-const walls=[];
-for(let x=-10;x<=10;x+=2){for(let z=-10;z<=10;z+=2){walls.push({x,y:0,z});}}
+// Create simple walls as planes
+const walls = [
+  {x:-10,y:0,z:-10,w:20,h:2,d:0.5},
+  {x:-10,y:0,z:10,w:20,h:2,d:0.5},
+  {x:-10,y:0,z:-10,w:0.5,h:2,d:20},
+  {x:10,y:0,z:-10,w:0.5,h:2,d:20},
+];
+
 let lidarDots=[];
 let canScan=true;
 
 function createShader(gl,type,src){let s=gl.createShader(type); gl.shaderSource(s,src); gl.compileShader(s); if(!gl.getShaderParameter(s,gl.COMPILE_STATUS)){console.error(gl.getShaderInfoLog(s));} return s;}
 function createProgram(gl,vsrc,fsrc){let vs=createShader(gl,gl.VERTEX_SHADER,vsrc); let fs=createShader(gl,gl.FRAGMENT_SHADER,fsrc); let p=gl.createProgram(); gl.attachShader(p,vs); gl.attachShader(p,fs); gl.linkProgram(p); if(!gl.getProgramParameter(p,gl.LINK_STATUS)){console.error(gl.getProgramInfoLog(p));} return p;}
 
-const vShaderSrc=`attribute vec3 a_position; uniform mat4 u_proj; uniform mat4 u_view; void main(){gl_Position=u_proj*u_view*vec4(a_position,1.0); gl_PointSize=4.0;}`;
+const vShaderSrc=`attribute vec3 a_position; uniform mat4 u_proj; uniform mat4 u_view; void main(){gl_Position=u_proj*u_view*vec4(a_position,1.0); gl_PointSize=3.0;}`;
 const fShaderSrc=`void main(){gl_FragColor=vec4(0.0,1.0,0.0,1.0);}`;
 const program=createProgram(gl,vShaderSrc,fShaderSrc);
 const posLoc=gl.getAttribLocation(program,'a_position');
@@ -53,25 +58,47 @@ const pointBuffer=gl.createBuffer();
 
 function perspective(fov,aspect,near,far){ let f=1/Math.tan(fov/2); let nf=1/(near-far); return [f/aspect,0,0,0,0,f,0,0,0,0,(far+near)*nf,-1,0,0,(2*far*near)*nf,0]; }
 
+function castRay(origin,dir,maxDist){
+  let step=0.1;
+  for(let d=0;d<maxDist;d+=step){
+    let px=origin.x+dir.x*d;
+    let py=origin.y+dir.y*d;
+    let pz=origin.z+dir.z*d;
+    for(let w of walls){
+      if(px>=w.x && px<=w.x+w.w && py>=w.y && py<=w.y+w.h && pz>=w.z && pz<=w.z+w.d){
+        return {x:px,y:py,z:pz};
+      }
+    }
+  }
+  return null;
+}
+
 function update(dt){
   let speed=0.05*(keys['shift']?2:1);
   let dirX=Math.sin(camera.yaw)*Math.cos(camera.pitch);
+  let dirY=Math.sin(camera.pitch);
   let dirZ=Math.cos(camera.yaw)*Math.cos(camera.pitch);
   let rightX=Math.sin(camera.yaw+Math.PI/2);
   let rightZ=Math.cos(camera.yaw+Math.PI/2);
 
-  if(keys['w']){camera.x+=dirX*speed; camera.z+=dirZ*speed;}
-  if(keys['s']){camera.x-=dirX*speed; camera.z-=dirZ*speed;}
+  if(keys['w']){camera.x+=dirX*speed; camera.y+=dirY*speed; camera.z+=dirZ*speed;}
+  if(keys['s']){camera.x-=dirX*speed; camera.y-=dirY*speed; camera.z-=dirZ*speed;}
   if(keys['a']){camera.x-=rightX*speed; camera.z-=rightZ*speed;}
   if(keys['d']){camera.x+=rightX*speed; camera.z+=rightZ*speed;}
 
+  // LIDAR scan
   if(keys['r'] && canScan){
     canScan=false;
-    lidarDots=[];
-    for(let i=0;i<360;i+=5){
-      let angle = camera.yaw + i*Math.PI/180;
-      for(let r=0;r<20;r+=0.5){
-        lidarDots.push({x:camera.x+Math.sin(angle)*r, y:camera.y, z:camera.z+Math.cos(angle)*r});
+    let rows=10;
+    let cols=30;
+    let maxDist=20;
+    for(let i=0;i<cols;i++){
+      let yawOffset=(i/cols - 0.5)*Math.PI/2;
+      for(let j=0;j<rows;j++){
+        let pitchOffset=(j/rows - 0.5)*Math.PI/6;
+        let dir={x:Math.sin(camera.yaw+yawOffset)*Math.cos(camera.pitch+pitchOffset), y:Math.sin(camera.pitch+pitchOffset), z:Math.cos(camera.yaw+yawOffset)*Math.cos(camera.pitch+pitchOffset)};
+        let hit=castRay(camera,dir,maxDist);
+        if(hit) lidarDots.push(hit);
       }
     }
     setTimeout(()=>{canScan=true;},2000);
@@ -86,9 +113,7 @@ function render(){
   gl.uniformMatrix4fv(uProj,false,new Float32Array(proj));
   gl.uniformMatrix4fv(uView,false,new Float32Array(view));
   
-  // Draw walls as LIDAR dots for testing
   let positions=[];
-  for(let w of walls){ positions.push(w.x,w.y,w.z); }
   for(let d of lidarDots){ positions.push(d.x,d.y,d.z); }
   gl.bindBuffer(gl.ARRAY_BUFFER,pointBuffer);
   gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(positions),gl.STATIC_DRAW);
