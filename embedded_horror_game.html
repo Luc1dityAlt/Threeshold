@@ -95,7 +95,11 @@ const state = {
   fearPulse: 0,
   level: 1,
   exitUnlocked: false,
-  messagesSeen: new Set()
+  messagesSeen: new Set(),
+  blinkTimer: 30,
+  isBlinking: false,
+  blinkDuration: 0.18,
+  blinkProgress: 0
 };
 
 // ---------- PLAYER ----------
@@ -103,9 +107,17 @@ const player = {
   x: 0,
   y: 0,
   angle: 0,
-  speed: 2.2,
+  speed: 3.0, // units per second, fixed
   rotSpeed: 0.035,
   fov: Math.PI / 3
+};
+
+// ---------- ENTITY ----------
+const entity = {
+  x: 0,
+  y: 0,
+  speed: 0.9,
+  pauseRadius: 1.2
 };
 
 // ---------- MAP (Procedural Rooms) ----------
@@ -134,6 +146,8 @@ function generateMap() {
   map[cy][cx] = 2;
   player.x = MAP_SIZE/2;
   player.y = MAP_SIZE/2;
+  entity.x = player.x + 6;
+  entity.y = player.y + 6;
 }
 
 generateMap();
@@ -202,14 +216,42 @@ function updateStory() {
 
 // ---------- UPDATE ----------
 function update(dt) {
+  // --- Blink timer ---
+  state.blinkTimer -= dt;
+  if (state.blinkTimer <= 0 && !state.isBlinking) {
+    state.isBlinking = true;
+    state.blinkProgress = state.blinkDuration;
+    state.blinkTimer = 30;
+  }
+
+  if (state.isBlinking) {
+    state.blinkProgress -= dt;
+    if (state.blinkProgress <= 0) state.isBlinking = false;
+  }
+
+  // --- Player movement ---
   let dx = Math.cos(player.angle);
   let dy = Math.sin(player.angle);
 
-  if (keys['w']) tryMove(dx*player.speed*dt, dy*player.speed*dt);
-  if (keys['s']) tryMove(-dx*player.speed*dt, -dy*player.speed*dt);
+  if (keys['w']) tryMove(dx * player.speed * dt, dy * player.speed * dt);
+  if (keys['s']) tryMove(-dx * player.speed * dt, -dy * player.speed * dt);
   if (keys['a']) player.angle -= player.rotSpeed;
   if (keys['d']) player.angle += player.rotSpeed;
 
+  // --- Entity movement (only during blink) ---
+  if (state.isBlinking) {
+    const ex = player.x - entity.x;
+    const ey = player.y - entity.y;
+    const dist = Math.hypot(ex, ey);
+
+    if (dist > entity.pauseRadius) {
+      const scale = Math.min(dist / 5, 1);
+      entity.x += (ex / dist) * entity.speed * scale * dt;
+      entity.y += (ey / dist) * entity.speed * scale * dt;
+    }
+  }
+
+  // --- Sanity system ---
   state.time += dt;
   state.fearPulse += dt;
 
@@ -220,6 +262,13 @@ function update(dt) {
     canvas.classList.add('flash');
     setTimeout(()=>canvas.classList.remove('flash'),120);
   }
+
+  state.sanity = clamp(state.sanity,0,100);
+  sanityEl.textContent = Math.floor(state.sanity);
+  updateStory();
+
+  if (state.sanity <= 0) objEl.textContent = "You stayed too long.";
+}
 
   state.sanity = clamp(state.sanity,0,100);
   sanityEl.textContent = Math.floor(state.sanity);
@@ -256,12 +305,38 @@ function render() {
     const h = canvas.height / d;
     ctx.fillRect(i, (canvas.height-h)/2, 1, h);
   }
+
+  // --- Render entity only when visible & not blinking ---
+  if (!state.isBlinking) {
+    const dx = entity.x - player.x;
+    const dy = entity.y - player.y;
+    const angle = Math.atan2(dy, dx) - player.angle;
+    const dist = Math.hypot(dx, dy);
+
+    if (Math.abs(angle) < player.fov/2) {
+      const x = (angle / player.fov + 0.5) * canvas.width;
+      const h = canvas.height / dist;
+      ctx.fillStyle = '#550000';
+      ctx.fillRect(x-5, (canvas.height-h)/2, 10, h);
+    }
+  }
+
+  // --- Blink blackout ---
+  if (state.isBlinking) {
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+  }
+},${shade},${shade})`;
+    const h = canvas.height / d;
+    ctx.fillRect(i, (canvas.height-h)/2, 1, h);
+  }
 }
 
 // ---------- LOOP ----------
 let last = performance.now();
 function loop(now) {
-  const dt = (now-last)/16;
+  let dt = (now - last) / 1000;
+  dt = Math.min(dt, 0.05);
   last = now;
   update(dt);
   render();
