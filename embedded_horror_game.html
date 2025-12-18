@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>THRESHOLD: A Browser Horror</title>
+<title>THRESHOLD: LIDAR Horror</title>
 <style>
 html, body {
   margin: 0;
@@ -41,13 +41,6 @@ canvas {
   font-size: 12px;
   padding: 6px;
 }
-.flash {
-  animation: flicker 0.15s infinite alternate;
-}
-@keyframes flicker {
-  from { opacity: 0.85; }
-  to { opacity: 1; }
-}
 </style>
 </head>
 <body>
@@ -55,7 +48,7 @@ canvas {
   <canvas id="c"></canvas>
   <div id="ui">
     <div>Sanity: <span id="sanity">100</span></div>
-    <div>Objective: <span id="objective">Find the exit</span></div>
+    <div>Objective: <span id="objective">Use LIDAR (R) to scan</span></div>
   </div>
   <div id="log"></div>
 </div>
@@ -86,10 +79,9 @@ function clamp(v,a,b){ return Math.max(a,Math.min(b,v)); }
 const state = {
   time: 0,
   sanity: 100,
-  fearPulse: 0,
-  level: 1,
-  exitUnlocked: false,
-  messagesSeen: new Set()
+  messagesSeen: new Set(),
+  lidarActive: false,
+  lidarDots: []
 };
 
 const player = {
@@ -98,11 +90,10 @@ const player = {
   angle: 0,
   speed: 0.022,
   rotSpeed: 0.035,
-  fov: Math.PI / 3
+  fov: Math.PI/3
 };
 
 const MAP_SIZE = 32;
-const TILE = 1;
 let map = [];
 
 function generateMap() {
@@ -111,18 +102,18 @@ function generateMap() {
   let cy = Math.floor(MAP_SIZE/2);
   map[cy][cx] = 0;
 
-  for (let i=0;i<900;i++){
-    map[cy][cx] = 0;
+  for(let i=0;i<900;i++){
+    map[cy][cx]=0;
     const d = Math.floor(rand(0,4));
-    if (d===0) cx++;
-    if (d===1) cx--;
-    if (d===2) cy++;
-    if (d===3) cy--;
+    if(d===0) cx++;
+    if(d===1) cx--;
+    if(d===2) cy++;
+    if(d===3) cy--;
     cx = clamp(cx,1,MAP_SIZE-2);
     cy = clamp(cy,1,MAP_SIZE-2);
   }
 
-  map[cy][cx] = 2;
+  map[cy][cx]=2;
   player.x = MAP_SIZE/2;
   player.y = MAP_SIZE/2;
 }
@@ -138,124 +129,85 @@ canvas.addEventListener('click', () => {
 });
 
 document.addEventListener('mousemove', e => {
-  if (document.pointerLockElement === canvas) {
+  if(document.pointerLockElement === canvas){
     player.angle += e.movementX * 0.002;
   }
 });
 
-function castRay(angle) {
+function castRay(angle){
   let sin = Math.sin(angle);
   let cos = Math.cos(angle);
   let dist = 0;
-  while (dist < 20) {
-    const x = player.x + cos * dist;
-    const y = player.y + sin * dist;
+  while(dist < 20){
+    const x = player.x + cos*dist;
+    const y = player.y + sin*dist;
     const tx = Math.floor(x);
     const ty = Math.floor(y);
-    if (map[ty] && map[ty][tx] === 1) return dist;
-    if (map[ty] && map[ty][tx] === 2) return dist;
+    if(map[ty] && map[ty][tx] === 1) return dist;
+    if(map[ty] && map[ty][tx] === 2) return dist;
     dist += 0.05;
   }
   return 20;
 }
 
-const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-function whisper() {
-  const o = audioCtx.createOscillator();
-  const g = audioCtx.createGain();
-  o.type = 'sawtooth';
-  o.frequency.value = rand(40,80);
-  g.gain.value = 0.015;
-  o.connect(g).connect(audioCtx.destination);
-  o.start();
-  o.stop(audioCtx.currentTime + rand(0.2,0.6));
-}
-
-const story = [
-  {s:95, t:"You wake up standing. The building is breathing."},
-  {s:70, t:"The walls remember you."},
-  {s:45, t:"You were not the first to hear this place think."},
-  {s:20, t:"Leaving might not mean escaping."}
-];
-
-function updateStory() {
-  story.forEach(e => {
-    if (state.sanity <= e.s && !state.messagesSeen.has(e.s)) {
-      log(e.t);
-      state.messagesSeen.add(e.s);
-    }
-  });
-}
-
-function update(dt) {
+function update(dt){
   let dx = Math.cos(player.angle);
   let dy = Math.sin(player.angle);
-
   let speedMultiplier = keys['shift'] ? 2 : 1;
 
-  if (keys['w']) tryMove(dx * player.speed * dt * speedMultiplier, dy * player.speed * dt * speedMultiplier);
-  if (keys['s']) tryMove(-dx * player.speed * dt * speedMultiplier, -dy * player.speed * dt * speedMultiplier);
-  if (keys['a']) player.angle -= player.rotSpeed * dt;
-  if (keys['d']) player.angle += player.rotSpeed * dt;
+  if(keys['w']) tryMove(dx*player.speed*dt*speedMultiplier, dy*player.speed*dt*speedMultiplier);
+  if(keys['s']) tryMove(-dx*player.speed*dt*speedMultiplier, -dy*player.speed*dt*speedMultiplier);
+  if(keys['a']) player.angle -= player.rotSpeed*dt;
+  if(keys['d']) player.angle += player.rotSpeed*dt;
 
-  state.time += dt;
-  state.fearPulse += dt;
-
-  if (state.fearPulse > rand(3,7)) {
-    state.fearPulse = 0;
-    state.sanity -= rand(1,4);
-    whisper();
-    canvas.classList.add('flash');
-    setTimeout(()=>canvas.classList.remove('flash'),120);
+  // LIDAR toggle
+  if(keys['r'] && !state.lidarActive){
+    state.lidarActive = true;
+    state.lidarProgress = 0;
+    state.lidarDots = [];
   }
 
-  state.sanity = clamp(state.sanity,0,100);
-  sanityEl.textContent = Math.floor(state.sanity);
-  updateStory();
-
-  if (state.sanity <= 0) {
-    objEl.textContent = "You stayed too long.";
+  if(state.lidarActive){
+    state.lidarProgress += dt*5;
+    for(let i=0;i<360;i+=5){
+      let angle = (i/180)*Math.PI + player.angle;
+      let dist = castRay(angle);
+      state.lidarDots.push({x: player.x+Math.cos(angle)*dist, y: player.y+Math.sin(angle)*dist});
+    }
+    if(state.lidarProgress>4){ state.lidarActive=false; }
   }
 }
 
-function tryMove(mx,my) {
+function tryMove(mx,my){
   const nx = player.x + mx;
   const ny = player.y + my;
-  if (map[Math.floor(player.y)][Math.floor(nx)] !== 1) player.x = nx;
-  if (map[Math.floor(ny)][Math.floor(player.x)] !== 1) player.y = ny;
-
-  if (map[Math.floor(player.y)][Math.floor(player.x)] === 2) {
-    objEl.textContent = "The door is watching you.";
-    log("The exit does not open from this side.");
-  }
+  if(map[Math.floor(player.y)][Math.floor(nx)] !==1) player.x = nx;
+  if(map[Math.floor(ny)][Math.floor(player.x)] !==1) player.y = ny;
 }
 
-function render() {
+function render(){
   ctx.fillStyle = '#000';
   ctx.fillRect(0,0,canvas.width,canvas.height);
 
-  // LIDAR effect - only render points along rays
-  const rays = 200; // fewer rays for LIDAR scan
-  for (let i=0;i<rays;i++){
-    const a = player.angle - player.fov/2 + (i/rays)*player.fov;
-    let d = castRay(a);
-    const px = canvas.width/2 + Math.cos(a) * d * 20;
-    const py = canvas.height/2 + Math.sin(a) * d * 20;
-    ctx.fillStyle = '#0f0';
-    ctx.fillRect(px, py, 2, 2);
-  }
+  // Draw LIDAR dots
+  ctx.fillStyle = '#0f0';
+  state.lidarDots.forEach(dot=>{
+    const px = canvas.width/2 + (dot.x - player.x)*20;
+    const py = canvas.height/2 + (dot.y - player.y)*20;
+    ctx.fillRect(px, py, 2,2);
+  });
 }
 
 let last = performance.now();
-function loop(now) {
-  const dt = (now-last)/16;
+function loop(now){
+  let dt = (now-last)/16;
   last = now;
   update(dt);
   render();
   requestAnimationFrame(loop);
 }
 
-log("Click to focus. WASD to move. Hold Shift to sprint. Use the LIDAR gun to see.");
+log("Click to focus. WASD to move. Hold Shift to sprint. Press R to use LIDAR.");
 requestAnimationFrame(loop);
 </script>
 </body>
