@@ -60,10 +60,6 @@ canvas {
   <div id="log"></div>
 </div>
 <script>
-// ============================
-// THRESHOLD - EMBEDDED HORROR
-// ============================
-
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
 const logEl = document.getElementById('log');
@@ -195,10 +191,12 @@ function update(dt) {
   let dx = Math.cos(player.angle);
   let dy = Math.sin(player.angle);
 
-  if (keys['w']) tryMove(dx*player.speed*dt, dy*player.speed*dt);
-  if (keys['s']) tryMove(-dx*player.speed*dt, -dy*player.speed*dt);
-  if (keys['a']) player.angle -= player.rotSpeed;
-  if (keys['d']) player.angle += player.rotSpeed;
+  let speedMultiplier = keys['shift'] ? 2 : 1;
+
+  if (keys['w']) tryMove(dx * player.speed * dt * speedMultiplier, dy * player.speed * dt * speedMultiplier);
+  if (keys['s']) tryMove(-dx * player.speed * dt * speedMultiplier, -dy * player.speed * dt * speedMultiplier);
+  if (keys['a']) player.angle -= player.rotSpeed * dt;
+  if (keys['d']) player.angle += player.rotSpeed * dt;
 
   state.time += dt;
   state.fearPulse += dt;
@@ -236,14 +234,15 @@ function render() {
   ctx.fillStyle = '#000';
   ctx.fillRect(0,0,canvas.width,canvas.height);
 
-  const rays = canvas.width;
+  // LIDAR effect - only render points along rays
+  const rays = 200; // fewer rays for LIDAR scan
   for (let i=0;i<rays;i++){
     const a = player.angle - player.fov/2 + (i/rays)*player.fov;
     let d = castRay(a);
-    const shade = 200 / (d*d);
-    ctx.fillStyle = `rgb(${shade},${shade},${shade})`;
-    const h = canvas.height / d;
-    ctx.fillRect(i, (canvas.height-h)/2, 1, h);
+    const px = canvas.width/2 + Math.cos(a) * d * 20;
+    const py = canvas.height/2 + Math.sin(a) * d * 20;
+    ctx.fillStyle = '#0f0';
+    ctx.fillRect(px, py, 2, 2);
   }
 }
 
@@ -256,7 +255,7 @@ function loop(now) {
   requestAnimationFrame(loop);
 }
 
-log("Click to focus. WASD to move. The building listens.");
+log("Click to focus. WASD to move. Hold Shift to sprint. Use the LIDAR gun to see.");
 requestAnimationFrame(loop);
 </script>
 </body>
