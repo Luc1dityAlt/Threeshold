@@ -95,11 +95,7 @@ const state = {
   fearPulse: 0,
   level: 1,
   exitUnlocked: false,
-  messagesSeen: new Set(),
-  blinkTimer: 30,
-  isBlinking: false,
-  blinkDuration: 0.18,
-  blinkProgress: 0
+  messagesSeen: new Set()
 };
 
 // ---------- PLAYER ----------
@@ -107,8 +103,8 @@ const player = {
   x: 0,
   y: 0,
   angle: 0,
-  speed: 2.0,
-  rotSpeed: 2.4,
+  speed: 2.2,
+  rotSpeed: 0.035,
   fov: Math.PI / 3
 };
 
@@ -138,22 +134,14 @@ function generateMap() {
   map[cy][cx] = 2;
   player.x = MAP_SIZE/2;
   player.y = MAP_SIZE/2;
-  entity.x = player.x + 6;
-  entity.y = player.y + 6;
 }
 
 generateMap();
 
 // ---------- INPUT ----------
 const keys = {};
-window.addEventListener('keydown', e => {
-  if (!keys[e.key.toLowerCase()]) {
-    keys[e.key.toLowerCase()] = true;
-  }
-});
-window.addEventListener('keyup', e => {
-  keys[e.key.toLowerCase()] = false;
-});
+window.addEventListener('keydown', e => keys[e.key.toLowerCase()] = true);
+window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
 
 canvas.addEventListener('click', () => {
   canvas.requestPointerLock();
@@ -217,10 +205,10 @@ function update(dt) {
   let dx = Math.cos(player.angle);
   let dy = Math.sin(player.angle);
 
-  if (keys['w']) tryMove(dx * player.speed * dt, dy * player.speed * dt);
-  if (keys['s']) tryMove(-dx * player.speed * dt, -dy * player.speed * dt);
-  if (keys['a']) player.angle -= player.rotSpeed * dt;
-  if (keys['d']) player.angle += player.rotSpeed * dt;
+  if (keys['w']) tryMove(dx*player.speed*dt, dy*player.speed*dt);
+  if (keys['s']) tryMove(-dx*player.speed*dt, -dy*player.speed*dt);
+  if (keys['a']) player.angle -= player.rotSpeed;
+  if (keys['d']) player.angle += player.rotSpeed;
 
   state.time += dt;
   state.fearPulse += dt;
@@ -262,38 +250,9 @@ function render() {
   const rays = canvas.width;
   for (let i=0;i<rays;i++){
     const a = player.angle - player.fov/2 + (i/rays)*player.fov;
-    const d = castRay(a);
+    let d = castRay(a);
     const shade = 200 / (d*d);
     ctx.fillStyle = `rgb(${shade},${shade},${shade})`;
-    const h = canvas.height / d;
-    ctx.fillRect(i, (canvas.height-h)/2, 1, h);
-  }
-},${shade},${shade})`;
-    const h = canvas.height / d;
-    ctx.fillRect(i, (canvas.height-h)/2, 1, h);
-  }
-
-  // --- Render entity only when visible & not blinking ---
-  if (!state.isBlinking) {
-    const dx = entity.x - player.x;
-    const dy = entity.y - player.y;
-    const angle = Math.atan2(dy, dx) - player.angle;
-    const dist = Math.hypot(dx, dy);
-
-    if (Math.abs(angle) < player.fov/2) {
-      const x = (angle / player.fov + 0.5) * canvas.width;
-      const h = canvas.height / dist;
-      ctx.fillStyle = '#550000';
-      ctx.fillRect(x-5, (canvas.height-h)/2, 10, h);
-    }
-  }
-
-  // --- Blink blackout ---
-  if (state.isBlinking) {
-    ctx.fillStyle = '#000';
-    ctx.fillRect(0,0,canvas.width,canvas.height);
-  }
-},${shade},${shade})`;
     const h = canvas.height / d;
     ctx.fillRect(i, (canvas.height-h)/2, 1, h);
   }
@@ -302,16 +261,11 @@ function render() {
 // ---------- LOOP ----------
 let last = performance.now();
 function loop(now) {
-  let dt = (now - last) / 1000; // seconds
+  const dt = (now-last)/16;
   last = now;
-
-  // clamp delta to prevent teleporting
-  if (!isFinite(dt) || dt > 0.05) dt = 0.016;
-
   update(dt);
   render();
   requestAnimationFrame(loop);
-}
 }
 
 log("Click to focus. WASD to move. The building listens.");
