@@ -19,12 +19,9 @@ const gl = canvas.getContext('webgl');
 function resize(){ canvas.width=window.innerWidth; canvas.height=window.innerHeight; gl.viewport(0,0,canvas.width,canvas.height); }
 window.addEventListener('resize', resize); resize();
 
-// 3D helpers
 function degToRad(d){return d*Math.PI/180;}
 function createIdentity(){return [1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1];}
-function multiplyMat4(a,b){ let out=[]; for(let i=0;i<4;i++){for(let j=0;j<4;j++){out[i*4+j]=a[i*4]*b[j]+a[i*4+1]*b[j+4]+a[i*4+2]*b[j+8]+a[i*4+3]*b[j+12];}} return out;}
 
-// Camera
 let camera={x:0,y:1.5,z:0,yaw:0,pitch:0};
 let keys={};
 window.addEventListener('keydown', e=>keys[e.key.toLowerCase()]=true);
@@ -37,13 +34,12 @@ document.addEventListener('mousemove', e=>{
   }
 });
 
-// World
+// World walls
 const walls=[];
 for(let x=-10;x<=10;x+=2){for(let z=-10;z<=10;z+=2){walls.push({x,y:0,z});}}
 let lidarDots=[];
 let canScan=true;
 
-// WebGL setup
 function createShader(gl,type,src){let s=gl.createShader(type); gl.shaderSource(s,src); gl.compileShader(s); if(!gl.getShaderParameter(s,gl.COMPILE_STATUS)){console.error(gl.getShaderInfoLog(s));} return s;}
 function createProgram(gl,vsrc,fsrc){let vs=createShader(gl,gl.VERTEX_SHADER,vsrc); let fs=createShader(gl,gl.FRAGMENT_SHADER,fsrc); let p=gl.createProgram(); gl.attachShader(p,vs); gl.attachShader(p,fs); gl.linkProgram(p); if(!gl.getProgramParameter(p,gl.LINK_STATUS)){console.error(gl.getProgramInfoLog(p));} return p;}
 
@@ -59,8 +55,11 @@ function perspective(fov,aspect,near,far){ let f=1/Math.tan(fov/2); let nf=1/(ne
 
 function update(dt){
   let speed=0.05*(keys['shift']?2:1);
-  let dirX=Math.sin(camera.yaw); let dirZ=Math.cos(camera.yaw);
-  let rightX=Math.sin(camera.yaw+Math.PI/2); let rightZ=Math.cos(camera.yaw+Math.PI/2);
+  let dirX=Math.sin(camera.yaw)*Math.cos(camera.pitch);
+  let dirZ=Math.cos(camera.yaw)*Math.cos(camera.pitch);
+  let rightX=Math.sin(camera.yaw+Math.PI/2);
+  let rightZ=Math.cos(camera.yaw+Math.PI/2);
+
   if(keys['w']){camera.x+=dirX*speed; camera.z+=dirZ*speed;}
   if(keys['s']){camera.x-=dirX*speed; camera.z-=dirZ*speed;}
   if(keys['a']){camera.x-=rightX*speed; camera.z-=rightZ*speed;}
@@ -86,8 +85,11 @@ function render(){
   gl.useProgram(program);
   gl.uniformMatrix4fv(uProj,false,new Float32Array(proj));
   gl.uniformMatrix4fv(uView,false,new Float32Array(view));
+  
+  // Draw walls as LIDAR dots for testing
   let positions=[];
-  for(let dot of lidarDots){ positions.push(dot.x,dot.y,dot.z);}
+  for(let w of walls){ positions.push(w.x,w.y,w.z); }
+  for(let d of lidarDots){ positions.push(d.x,d.y,d.z); }
   gl.bindBuffer(gl.ARRAY_BUFFER,pointBuffer);
   gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(positions),gl.STATIC_DRAW);
   gl.enableVertexAttribArray(posLoc); gl.vertexAttribPointer(posLoc,3,gl.FLOAT,false,0,0);
