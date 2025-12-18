@@ -112,14 +112,6 @@ const player = {
   fov: Math.PI / 3
 };
 
-// ---------- ENTITY ----------
-const entity = {
-  x: 0,
-  y: 0,
-  speed: 0.9,
-  pauseRadius: 1.2
-};
-
 // ---------- MAP (Procedural Rooms) ----------
 const MAP_SIZE = 32;
 const TILE = 1;
@@ -222,44 +214,16 @@ function updateStory() {
 
 // ---------- UPDATE ----------
 function update(dt) {
-  // --- Player movement (frame-stable) ---
-  let dx = Math.cos(player.angle);
-  let dy = Math.sin(player.angle);
+  const dx = Math.cos(player.angle);
+  const dy = Math.sin(player.angle);
 
-  const moveStep = player.speed * dt;
+  const step = player.speed * dt;
 
-  if (keys['w']) tryMove(dx * moveStep, dy * moveStep);
-  if (keys['s']) tryMove(-dx * moveStep, -dy * moveStep);
+  if (keys['w']) tryMove(dx * step, dy * step);
+  if (keys['s']) tryMove(-dx * step, -dy * step);
   if (keys['a']) player.angle -= player.rotSpeed * dt * 60;
   if (keys['d']) player.angle += player.rotSpeed * dt * 60;
 
-  // --- Blink timer ---
-  state.blinkTimer -= dt;
-  if (state.blinkTimer <= 0 && !state.isBlinking) {
-    state.isBlinking = true;
-    state.blinkProgress = state.blinkDuration;
-    state.blinkTimer = 30;
-  }
-
-  if (state.isBlinking) {
-    state.blinkProgress -= dt;
-    if (state.blinkProgress <= 0) state.isBlinking = false;
-  }
-
-  // --- Entity movement (only during blink) ---
-  if (state.isBlinking) {
-    const ex = player.x - entity.x;
-    const ey = player.y - entity.y;
-    const dist = Math.hypot(ex, ey);
-
-    if (dist > entity.pauseRadius) {
-      const scale = Math.min(dist / 5, 1);
-      entity.x += (ex / dist) * entity.speed * scale * dt;
-      entity.y += (ey / dist) * entity.speed * scale * dt;
-    }
-  }
-
-  // --- Sanity system ---
   state.time += dt;
   state.fearPulse += dt;
 
@@ -270,13 +234,6 @@ function update(dt) {
     canvas.classList.add('flash');
     setTimeout(()=>canvas.classList.remove('flash'),120);
   }
-
-  state.sanity = clamp(state.sanity,0,100);
-  sanityEl.textContent = Math.floor(state.sanity);
-  updateStory();
-
-  if (state.sanity <= 0) objEl.textContent = "You stayed too long.";
-}
 
   state.sanity = clamp(state.sanity,0,100);
   sanityEl.textContent = Math.floor(state.sanity);
@@ -307,9 +264,13 @@ function render() {
   const rays = canvas.width;
   for (let i=0;i<rays;i++){
     const a = player.angle - player.fov/2 + (i/rays)*player.fov;
-    let d = castRay(a);
+    const d = castRay(a);
     const shade = 200 / (d*d);
     ctx.fillStyle = `rgb(${shade},${shade},${shade})`;
+    const h = canvas.height / d;
+    ctx.fillRect(i, (canvas.height-h)/2, 1, h);
+  }
+},${shade},${shade})`;
     const h = canvas.height / d;
     ctx.fillRect(i, (canvas.height-h)/2, 1, h);
   }
@@ -344,7 +305,7 @@ function render() {
 let last = performance.now();
 function loop(now) {
   let dt = (now - last) / 1000;
-  if (!isFinite(dt) || dt > 0.1) dt = 0.016;
+  if (!isFinite(dt) || dt > 0.05) dt = 0.016;
   last = now;
   update(dt);
   render();
