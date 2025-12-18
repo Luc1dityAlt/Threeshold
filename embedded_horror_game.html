@@ -107,8 +107,8 @@ const player = {
   x: 0,
   y: 0,
   angle: 0,
-  speed: 3.0, // units per second, fixed
-  rotSpeed: 0.035,
+  speed: 2.0,
+  rotSpeed: 2.4,
   fov: Math.PI / 3
 };
 
@@ -214,15 +214,13 @@ function updateStory() {
 
 // ---------- UPDATE ----------
 function update(dt) {
-  const dx = Math.cos(player.angle);
-  const dy = Math.sin(player.angle);
+  let dx = Math.cos(player.angle);
+  let dy = Math.sin(player.angle);
 
-  const step = player.speed * dt;
-
-  if (keys['w']) tryMove(dx * step, dy * step);
-  if (keys['s']) tryMove(-dx * step, -dy * step);
-  if (keys['a']) player.angle -= player.rotSpeed * dt * 60;
-  if (keys['d']) player.angle += player.rotSpeed * dt * 60;
+  if (keys['w']) tryMove(dx * player.speed * dt, dy * player.speed * dt);
+  if (keys['s']) tryMove(-dx * player.speed * dt, -dy * player.speed * dt);
+  if (keys['a']) player.angle -= player.rotSpeed * dt;
+  if (keys['d']) player.angle += player.rotSpeed * dt;
 
   state.time += dt;
   state.fearPulse += dt;
@@ -304,12 +302,16 @@ function render() {
 // ---------- LOOP ----------
 let last = performance.now();
 function loop(now) {
-  let dt = (now - last) / 1000;
-  if (!isFinite(dt) || dt > 0.05) dt = 0.016;
+  let dt = (now - last) / 1000; // seconds
   last = now;
+
+  // clamp delta to prevent teleporting
+  if (!isFinite(dt) || dt > 0.05) dt = 0.016;
+
   update(dt);
   render();
   requestAnimationFrame(loop);
+}
 }
 
 log("Click to focus. WASD to move. The building listens.");
