@@ -34,12 +34,12 @@ document.addEventListener('mousemove', e=>{
   }
 });
 
-// Create simple walls as planes
-const walls = [
+// World walls (as visible blocks)
+const walls=[
   {x:-10,y:0,z:-10,w:20,h:2,d:0.5},
   {x:-10,y:0,z:10,w:20,h:2,d:0.5},
   {x:-10,y:0,z:-10,w:0.5,h:2,d:20},
-  {x:10,y:0,z:-10,w:0.5,h:2,d:20},
+  {x:10,y:0,z:-10,w:0.5,h:2,d:20}
 ];
 
 let lidarDots=[];
@@ -86,7 +86,7 @@ function update(dt){
   if(keys['a']){camera.x-=rightX*speed; camera.z-=rightZ*speed;}
   if(keys['d']){camera.x+=rightX*speed; camera.z+=rightZ*speed;}
 
-  // LIDAR scan
+  // LIDAR scanning: grid of rays over time, sticking to surfaces
   if(keys['r'] && canScan){
     canScan=false;
     let rows=10;
@@ -114,6 +114,9 @@ function render(){
   gl.uniformMatrix4fv(uView,false,new Float32Array(view));
   
   let positions=[];
+  for(let w of walls){
+    positions.push(w.x,w.y,w.z); positions.push(w.x+w.w,w.y,w.z); positions.push(w.x,w.y+w.h,w.z); positions.push(w.x,w.y,w.z+w.d);
+  }
   for(let d of lidarDots){ positions.push(d.x,d.y,d.z); }
   gl.bindBuffer(gl.ARRAY_BUFFER,pointBuffer);
   gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(positions),gl.STATIC_DRAW);
