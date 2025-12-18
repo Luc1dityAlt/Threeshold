@@ -34,13 +34,15 @@ document.addEventListener('mousemove', e=>{
   }
 });
 
-// World walls (as visible blocks)
-const walls=[
-  {x:-10,y:0,z:-10,w:20,h:2,d:0.5},
-  {x:-10,y:0,z:10,w:20,h:2,d:0.5},
-  {x:-10,y:0,z:-10,w:0.5,h:2,d:20},
-  {x:10,y:0,z:-10,w:0.5,h:2,d:20}
-];
+// World walls as rays
+const mapSize = 20;
+const map = Array.from({length:mapSize},()=>Array(mapSize).fill(1));
+for(let y=1;y<mapSize-1;y++){
+  for(let x=1;x<mapSize-1;x++){
+    if(Math.random()<0.3) map[y][x]=0;
+  }
+}
+map[Math.floor(mapSize/2)][Math.floor(mapSize/2)] = 0; // starting point
 
 let lidarDots=[];
 let canScan=true;
@@ -58,48 +60,33 @@ const pointBuffer=gl.createBuffer();
 
 function perspective(fov,aspect,near,far){ let f=1/Math.tan(fov/2); let nf=1/(near-far); return [f/aspect,0,0,0,0,f,0,0,0,0,(far+near)*nf,-1,0,0,(2*far*near)*nf,0]; }
 
-function castRay(origin,dir,maxDist){
-  let step=0.1;
-  for(let d=0;d<maxDist;d+=step){
-    let px=origin.x+dir.x*d;
-    let py=origin.y+dir.y*d;
-    let pz=origin.z+dir.z*d;
-    for(let w of walls){
-      if(px>=w.x && px<=w.x+w.w && py>=w.y && py<=w.y+w.h && pz>=w.z && pz<=w.z+w.d){
-        return {x:px,y:py,z:pz};
-      }
-    }
+function castRay(origin,angle,maxDist){
+  let sin=Math.sin(angle), cos=Math.cos(angle);
+  for(let d=0;d<maxDist;d+=0.1){
+    let x=origin.x+cos*d, z=origin.z+sin*d;
+    let tx=Math.floor(x+mapSize/2), tz=Math.floor(z+mapSize/2);
+    if(map[tz] && map[tz][tx]===1) return {x:x,y:origin.y,z:z};
   }
   return null;
 }
 
 function update(dt){
   let speed=0.05*(keys['shift']?2:1);
-  let dirX=Math.sin(camera.yaw)*Math.cos(camera.pitch);
-  let dirY=Math.sin(camera.pitch);
-  let dirZ=Math.cos(camera.yaw)*Math.cos(camera.pitch);
-  let rightX=Math.sin(camera.yaw+Math.PI/2);
-  let rightZ=Math.cos(camera.yaw+Math.PI/2);
+  let dirX=Math.sin(camera.yaw); let dirZ=Math.cos(camera.yaw);
+  let rightX=Math.sin(camera.yaw+Math.PI/2); let rightZ=Math.cos(camera.yaw+Math.PI/2);
 
-  if(keys['w']){camera.x+=dirX*speed; camera.y+=dirY*speed; camera.z+=dirZ*speed;}
-  if(keys['s']){camera.x-=dirX*speed; camera.y-=dirY*speed; camera.z-=dirZ*speed;}
+  if(keys['w']){camera.x+=dirX*speed; camera.z+=dirZ*speed;}
+  if(keys['s']){camera.x-=dirX*speed; camera.z-=dirZ*speed;}
   if(keys['a']){camera.x-=rightX*speed; camera.z-=rightZ*speed;}
   if(keys['d']){camera.x+=rightX*speed; camera.z+=rightZ*speed;}
 
-  // LIDAR scanning: grid of rays over time, sticking to surfaces
   if(keys['r'] && canScan){
     canScan=false;
-    let rows=10;
-    let cols=30;
-    let maxDist=20;
-    for(let i=0;i<cols;i++){
-      let yawOffset=(i/cols - 0.5)*Math.PI/2;
-      for(let j=0;j<rows;j++){
-        let pitchOffset=(j/rows - 0.5)*Math.PI/6;
-        let dir={x:Math.sin(camera.yaw+yawOffset)*Math.cos(camera.pitch+pitchOffset), y:Math.sin(camera.pitch+pitchOffset), z:Math.cos(camera.yaw+yawOffset)*Math.cos(camera.pitch+pitchOffset)};
-        let hit=castRay(camera,dir,maxDist);
-        if(hit) lidarDots.push(hit);
-      }
+    let rays=100; let maxDist=20;
+    for(let i=0;i<rays;i++){
+      let a=camera.yaw - Math.PI/4 + (i/rays)*(Math.PI/2);
+      let hit=castRay(camera,a,maxDist);
+      if(hit) lidarDots.push(hit);
     }
     setTimeout(()=>{canScan=true;},2000);
   }
@@ -114,8 +101,11 @@ function render(){
   gl.uniformMatrix4fv(uView,false,new Float32Array(view));
   
   let positions=[];
-  for(let w of walls){
-    positions.push(w.x,w.y,w.z); positions.push(w.x+w.w,w.y,w.z); positions.push(w.x,w.y+w.h,w.z); positions.push(w.x,w.y,w.z+w.d);
+  // casted walls as points
+  for(let i=0;i<100;i++){
+    let angle=-Math.PI/4 + i*(Math.PI/50);
+    let hit=castRay(camera,angle,20);
+    if(hit) positions.push(hit.x,hit.y,hit.z);
   }
   for(let d of lidarDots){ positions.push(d.x,d.y,d.z); }
   gl.bindBuffer(gl.ARRAY_BUFFER,pointBuffer);
