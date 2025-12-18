@@ -77,7 +77,6 @@ function resize() {
 window.addEventListener('resize', resize);
 resize();
 
-// ---------- UTILITIES ----------
 function log(msg) {
   const p = document.createElement('div');
   p.textContent = msg;
@@ -88,7 +87,6 @@ function log(msg) {
 function rand(a,b){ return Math.random()*(b-a)+a; }
 function clamp(v,a,b){ return Math.max(a,Math.min(b,v)); }
 
-// ---------- GAME STATE ----------
 const state = {
   time: 0,
   sanity: 100,
@@ -98,17 +96,15 @@ const state = {
   messagesSeen: new Set()
 };
 
-// ---------- PLAYER ----------
 const player = {
   x: 0,
   y: 0,
   angle: 0,
-  speed: 2.2,
+  speed: 0.22,
   rotSpeed: 0.035,
   fov: Math.PI / 3
 };
 
-// ---------- MAP (Procedural Rooms) ----------
 const MAP_SIZE = 32;
 const TILE = 1;
 let map = [];
@@ -130,7 +126,6 @@ function generateMap() {
     cy = clamp(cy,1,MAP_SIZE-2);
   }
 
-  // Exit door
   map[cy][cx] = 2;
   player.x = MAP_SIZE/2;
   player.y = MAP_SIZE/2;
@@ -138,7 +133,6 @@ function generateMap() {
 
 generateMap();
 
-// ---------- INPUT ----------
 const keys = {};
 window.addEventListener('keydown', e => keys[e.key.toLowerCase()] = true);
 window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
@@ -153,7 +147,6 @@ document.addEventListener('mousemove', e => {
   }
 });
 
-// ---------- RAYCASTING ----------
 function castRay(angle) {
   let sin = Math.sin(angle);
   let cos = Math.cos(angle);
@@ -170,7 +163,6 @@ function castRay(angle) {
   return 20;
 }
 
-// ---------- AUDIO (SYNTHETIC) ----------
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 function whisper() {
   const o = audioCtx.createOscillator();
@@ -183,7 +175,6 @@ function whisper() {
   o.stop(audioCtx.currentTime + rand(0.2,0.6));
 }
 
-// ---------- STORY TRIGGERS ----------
 const story = [
   {s:95, t:"You wake up standing. The building is breathing."},
   {s:70, t:"The walls remember you."},
@@ -200,7 +191,6 @@ function updateStory() {
   });
 }
 
-// ---------- UPDATE ----------
 function update(dt) {
   let dx = Math.cos(player.angle);
   let dy = Math.sin(player.angle);
@@ -242,7 +232,6 @@ function tryMove(mx,my) {
   }
 }
 
-// ---------- RENDER ----------
 function render() {
   ctx.fillStyle = '#000';
   ctx.fillRect(0,0,canvas.width,canvas.height);
@@ -258,7 +247,6 @@ function render() {
   }
 }
 
-// ---------- LOOP ----------
 let last = performance.now();
 function loop(now) {
   const dt = (now-last)/16;
