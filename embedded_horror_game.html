@@ -2,120 +2,298 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>THRESHOLD: 3D LIDAR Horror</title>
+<title>THRESHOLD: A Browser Horror</title>
 <style>
-html, body { margin:0; padding:0; width:100%; height:100%; overflow:hidden; background:#000; }
-canvas { display:block; }
-#ui { position:absolute; top:10px; left:10px; color:#0f0; font-family: monospace; }
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #000;
+  color: #ccc;
+  font-family: monospace;
+}
+#game {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+canvas {
+  display: block;
+}
+#ui {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 10;
+  background: rgba(0,0,0,0.6);
+  padding: 8px 12px;
+  border: 1px solid #333;
+}
+#log {
+  position: absolute;
+  bottom: 0;
+  width: 100%;
+  max-height: 25%;
+  overflow-y: auto;
+  background: rgba(0,0,0,0.75);
+  font-size: 12px;
+  padding: 6px;
+}
+.flash {
+  animation: flicker 0.15s infinite alternate;
+}
+@keyframes flicker {
+  from { opacity: 0.85; }
+  to { opacity: 1; }
+}
 </style>
 </head>
 <body>
-<canvas id="c"></canvas>
-<div id="ui">WASD to move, Shift to sprint, R to scan with LIDAR</div>
+<div id="game">
+  <canvas id="c"></canvas>
+  <div id="ui">
+    <div>Sanity: <span id="sanity">100</span></div>
+    <div>Objective: <span id="objective">Find the exit</span></div>
+  </div>
+  <div id="log"></div>
+</div>
 <script>
+// ============================
+// THRESHOLD - EMBEDDED HORROR
+// ============================
+
 const canvas = document.getElementById('c');
-const gl = canvas.getContext('webgl');
+const ctx = canvas.getContext('2d');
+const logEl = document.getElementById('log');
+const sanityEl = document.getElementById('sanity');
+const objEl = document.getElementById('objective');
 
-function resize(){ canvas.width=window.innerWidth; canvas.height=window.innerHeight; gl.viewport(0,0,canvas.width,canvas.height); }
-window.addEventListener('resize', resize); resize();
+function resize() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+}
+window.addEventListener('resize', resize);
+resize();
 
-function degToRad(d){return d*Math.PI/180;}
-function createIdentity(){return [1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1];}
+// ---------- UTILITIES ----------
+function log(msg) {
+  const p = document.createElement('div');
+  p.textContent = msg;
+  logEl.appendChild(p);
+  logEl.scrollTop = logEl.scrollHeight;
+}
 
-let camera={x:0,y:1.5,z:0,yaw:0,pitch:0};
-let keys={};
-window.addEventListener('keydown', e=>keys[e.key.toLowerCase()]=true);
-window.addEventListener('keyup', e=>keys[e.key.toLowerCase()]=false);
-canvas.addEventListener('click', ()=>canvas.requestPointerLock());
-document.addEventListener('mousemove', e=>{
-  if(document.pointerLockElement===canvas){
-    camera.yaw += e.movementX * 0.002;
-    camera.pitch = Math.max(-Math.PI/2, Math.min(Math.PI/2, camera.pitch + e.movementY * 0.002));
+function rand(a,b){ return Math.random()*(b-a)+a; }
+function clamp(v,a,b){ return Math.max(a,Math.min(b,v)); }
+
+// ---------- GAME STATE ----------
+const state = {
+  time: 0,
+  sanity: 100,
+  fearPulse: 0,
+  level: 1,
+  exitUnlocked: false,
+  messagesSeen: new Set()
+};
+
+// ---------- PLAYER ----------
+const player = {
+  x: 0,
+  y: 0,
+  angle: 0,
+  speed: 0.22,
+  rotSpeed: 0.035,
+  fov: Math.PI / 3
+};
+
+// ---------- MAP (Procedural Rooms) ----------
+const MAP_SIZE = 32;
+const TILE = 1;
+let map = [];
+
+function generateMap() {
+  map = Array.from({length: MAP_SIZE}, () => Array(MAP_SIZE).fill(1));
+  let cx = Math.floor(MAP_SIZE/2);
+  let cy = Math.floor(MAP_SIZE/2);
+  map[cy][cx] = 0;
+
+  for (let i=0;i<900;i++){
+    map[cy][cx] = 0;
+    const d = Math.floor(rand(0,4));
+    if (d===0) cx++;
+    if (d===1) cx--;
+    if (d===2) cy++;
+    if (d===3) cy--;
+    cx = clamp(cx,1,MAP_SIZE-2);
+    cy = clamp(cy,1,MAP_SIZE-2);
+  }
+
+  map[cy][cx] = 2;
+  player.x = MAP_SIZE/2;
+  player.y = MAP_SIZE/2;
+}
+
+generateMap();
+
+// ---------- INPUT ----------
+const keys = {};
+window.addEventListener('keydown', e => keys[e.key.toLowerCase()] = true);
+window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
+
+canvas.addEventListener('click', () => {
+  canvas.requestPointerLock();
+});
+
+document.addEventListener('mousemove', e => {
+  if (document.pointerLockElement === canvas) {
+    player.angle += e.movementX * 0.002;
   }
 });
 
-// World walls as rays
-const mapSize = 20;
-const map = Array.from({length:mapSize},()=>Array(mapSize).fill(1));
-for(let y=1;y<mapSize-1;y++){
-  for(let x=1;x<mapSize-1;x++){
-    if(Math.random()<0.3) map[y][x]=0;
+// ---------- RAYCASTING ----------
+function castRay(angle) {
+  let sin = Math.sin(angle);
+  let cos = Math.cos(angle);
+  let dist = 0;
+  while (dist < 20) {
+    const x = player.x + cos * dist;
+    const y = player.y + sin * dist;
+    const tx = Math.floor(x);
+    const ty = Math.floor(y);
+    if (map[ty] && map[ty][tx] === 1) return dist;
+    if (map[ty] && map[ty][tx] === 2) return dist;
+    dist += 0.05;
   }
-}
-map[Math.floor(mapSize/2)][Math.floor(mapSize/2)] = 0; // starting point
-
-let lidarDots=[];
-let canScan=true;
-
-function createShader(gl,type,src){let s=gl.createShader(type); gl.shaderSource(s,src); gl.compileShader(s); if(!gl.getShaderParameter(s,gl.COMPILE_STATUS)){console.error(gl.getShaderInfoLog(s));} return s;}
-function createProgram(gl,vsrc,fsrc){let vs=createShader(gl,gl.VERTEX_SHADER,vsrc); let fs=createShader(gl,gl.FRAGMENT_SHADER,fsrc); let p=gl.createProgram(); gl.attachShader(p,vs); gl.attachShader(p,fs); gl.linkProgram(p); if(!gl.getProgramParameter(p,gl.LINK_STATUS)){console.error(gl.getProgramInfoLog(p));} return p;}
-
-const vShaderSrc=`attribute vec3 a_position; uniform mat4 u_proj; uniform mat4 u_view; void main(){gl_Position=u_proj*u_view*vec4(a_position,1.0); gl_PointSize=3.0;}`;
-const fShaderSrc=`void main(){gl_FragColor=vec4(0.0,1.0,0.0,1.0);}`;
-const program=createProgram(gl,vShaderSrc,fShaderSrc);
-const posLoc=gl.getAttribLocation(program,'a_position');
-const uProj=gl.getUniformLocation(program,'u_proj');
-const uView=gl.getUniformLocation(program,'u_view');
-const pointBuffer=gl.createBuffer();
-
-function perspective(fov,aspect,near,far){ let f=1/Math.tan(fov/2); let nf=1/(near-far); return [f/aspect,0,0,0,0,f,0,0,0,0,(far+near)*nf,-1,0,0,(2*far*near)*nf,0]; }
-
-function castRay(origin,angle,maxDist){
-  let sin=Math.sin(angle), cos=Math.cos(angle);
-  for(let d=0;d<maxDist;d+=0.1){
-    let x=origin.x+cos*d, z=origin.z+sin*d;
-    let tx=Math.floor(x+mapSize/2), tz=Math.floor(z+mapSize/2);
-    if(map[tz] && map[tz][tx]===1) return {x:x,y:origin.y,z:z};
-  }
-  return null;
+  return 20;
 }
 
-function update(dt){
-  let speed=0.05*(keys['shift']?2:1);
-  let dirX=Math.sin(camera.yaw); let dirZ=Math.cos(camera.yaw);
-  let rightX=Math.sin(camera.yaw+Math.PI/2); let rightZ=Math.cos(camera.yaw+Math.PI/2);
+// ---------- LIDAR SCANNER ----------
+let lidarDots = [];
+function lidarScan(){
+  const rays = 60;
+  const maxDist = 20;
+  for(let i=0;i<rays;i++){
+    let angle = player.angle - player.fov/2 + (i/rays)*player.fov;
+    let dist = castRay(angle);
+    let dotX = player.x + Math.cos(angle)*dist;
+    let dotY = player.y + Math.sin(angle)*dist;
+    lidarDots.push({x:dotX, y:dotY});
+  }
+}
 
-  if(keys['w']){camera.x+=dirX*speed; camera.z+=dirZ*speed;}
-  if(keys['s']){camera.x-=dirX*speed; camera.z-=dirZ*speed;}
-  if(keys['a']){camera.x-=rightX*speed; camera.z-=rightZ*speed;}
-  if(keys['d']){camera.x+=rightX*speed; camera.z+=rightZ*speed;}
+window.addEventListener('keydown', e => {
+  if(e.key.toLowerCase()==='r') lidarScan();
+});
 
-  if(keys['r'] && canScan){
-    canScan=false;
-    let rays=100; let maxDist=20;
-    for(let i=0;i<rays;i++){
-      let a=camera.yaw - Math.PI/4 + (i/rays)*(Math.PI/2);
-      let hit=castRay(camera,a,maxDist);
-      if(hit) lidarDots.push(hit);
+// ---------- AUDIO (SYNTHETIC) ----------
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+function whisper() {
+  const o = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  o.type = 'sawtooth';
+  o.frequency.value = rand(40,80);
+  g.gain.value = 0.015;
+  o.connect(g).connect(audioCtx.destination);
+  o.start();
+  o.stop(audioCtx.currentTime + rand(0.2,0.6));
+}
+
+// ---------- STORY TRIGGERS ----------
+const story = [
+  {s:95, t:"You wake up standing. The building is breathing."},
+  {s:70, t:"The walls remember you."},
+  {s:45, t:"You were not the first to hear this place think."},
+  {s:20, t:"Leaving might not mean escaping."}
+];
+
+function updateStory() {
+  story.forEach(e => {
+    if (state.sanity <= e.s && !state.messagesSeen.has(e.s)) {
+      log(e.t);
+      state.messagesSeen.add(e.s);
     }
-    setTimeout(()=>{canScan=true;},2000);
+  });
+}
+
+// ---------- UPDATE ----------
+function update(dt) {
+  let dx = Math.cos(player.angle);
+  let dy = Math.sin(player.angle);
+
+  if (keys['w']) tryMove(dx*player.speed*dt, dy*player.speed*dt);
+  if (keys['s']) tryMove(-dx*player.speed*dt, -dy*player.speed*dt);
+  if (keys['a']) player.angle -= player.rotSpeed;
+  if (keys['d']) player.angle += player.rotSpeed;
+
+  state.time += dt;
+  state.fearPulse += dt;
+
+  if (state.fearPulse > rand(3,7)) {
+    state.fearPulse = 0;
+    state.sanity -= rand(1,4);
+    whisper();
+    canvas.classList.add('flash');
+    setTimeout(()=>canvas.classList.remove('flash'),120);
+  }
+
+  state.sanity = clamp(state.sanity,0,100);
+  sanityEl.textContent = Math.floor(state.sanity);
+  updateStory();
+
+  if (state.sanity <= 0) {
+    objEl.textContent = "You stayed too long.";
   }
 }
 
-function render(){
-  gl.clearColor(0,0,0,1); gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
-  const proj=perspective(degToRad(60),canvas.width/canvas.height,0.1,100);
-  const view=createIdentity(); view[12]=-camera.x; view[13]=-camera.y; view[14]=-camera.z;
-  gl.useProgram(program);
-  gl.uniformMatrix4fv(uProj,false,new Float32Array(proj));
-  gl.uniformMatrix4fv(uView,false,new Float32Array(view));
-  
-  let positions=[];
-  // casted walls as points
-  for(let i=0;i<100;i++){
-    let angle=-Math.PI/4 + i*(Math.PI/50);
-    let hit=castRay(camera,angle,20);
-    if(hit) positions.push(hit.x,hit.y,hit.z);
+function tryMove(mx,my) {
+  const nx = player.x + mx;
+  const ny = player.y + my;
+  if (map[Math.floor(player.y)][Math.floor(nx)] !== 1) player.x = nx;
+  if (map[Math.floor(ny)][Math.floor(player.x)] !== 1) player.y = ny;
+
+  if (map[Math.floor(player.y)][Math.floor(player.x)] === 2) {
+    objEl.textContent = "The door is watching you.";
+    log("The exit does not open from this side.");
   }
-  for(let d of lidarDots){ positions.push(d.x,d.y,d.z); }
-  gl.bindBuffer(gl.ARRAY_BUFFER,pointBuffer);
-  gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(positions),gl.STATIC_DRAW);
-  gl.enableVertexAttribArray(posLoc); gl.vertexAttribPointer(posLoc,3,gl.FLOAT,false,0,0);
-  gl.drawArrays(gl.POINTS,0,positions.length/3);
 }
 
-let last=performance.now();
-function loop(now){ const dt=(now-last)/16; last=now; update(dt); render(); requestAnimationFrame(loop); }
+// ---------- RENDER ----------
+function render() {
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+
+  const rays = canvas.width;
+  for (let i=0;i<rays;i++){
+    const a = player.angle - player.fov/2 + (i/rays)*player.fov;
+    let d = castRay(a);
+    const shade = 200 / (d*d);
+    ctx.fillStyle = `rgb(${shade},${shade},${shade})`;
+    const h = canvas.height / d;
+    ctx.fillRect(i, (canvas.height-h)/2, 1, h);
+  }
+
+  // draw LIDAR dots
+  ctx.fillStyle='lime';
+  lidarDots.forEach(dot=>{
+    const screenX = (dot.x - player.x + MAP_SIZE/2)/MAP_SIZE*canvas.width;
+    const screenY = (dot.y - player.y + MAP_SIZE/2)/MAP_SIZE*canvas.height;
+    ctx.fillRect(screenX,screenY,2,2);
+  });
+}
+
+// ---------- LOOP ----------
+let last = performance.now();
+function loop(now) {
+  const dt = (now-last)/16;
+  last = now;
+  update(dt);
+  render();
+  requestAnimationFrame(loop);
+}
+
+log("Click to focus. WASD to move. The building listens.");
 requestAnimationFrame(loop);
 </script>
 </body>
